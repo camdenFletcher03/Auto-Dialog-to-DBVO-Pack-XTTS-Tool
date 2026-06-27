@@ -60,7 +60,7 @@ Before using the tool, you need to extract the player dialogue data from your de
 
 1. The script will run and automatically filter out non-vocalized text, debug logs, action strings, and system placeholders.
 2. Once processing finishes, a save prompt will appear.
-3. Save the file as `Player_Dialog.csv` somewhere accessible.
+3. Save the file as `Filterd_Player_Dialog.csv` somewhere accessible.
 4. Feed this exact `.csv` file into the **Auto Dialog to DBVO Pack XTTS Tool** GUI to begin generating your voice lines!
 
 ## How to Use
