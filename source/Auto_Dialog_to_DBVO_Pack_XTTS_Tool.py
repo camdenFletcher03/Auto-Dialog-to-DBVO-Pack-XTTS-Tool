@@ -13,6 +13,7 @@ import wave
 import audioop
 import time
 import string
+import shutil  # Added for removing wav_refs folder
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 def install_deps():
@@ -30,7 +31,7 @@ class AutoDialogToDBVOTool:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Auto Dialog to DBVO Pack XTTS Tool")
-        self.root.geometry("1480x980")
+        self.root.geometry("1480x1020")
         self.progress_var = tk.DoubleVar()
         self.create_widgets()
         
@@ -43,15 +44,23 @@ class AutoDialogToDBVOTool:
 
         # CSV Input
         frame = tk.Frame(self.root)
-        frame.pack(fill="x", padx=25, pady=12)
+        frame.pack(fill="x", padx=25, pady=6)
         tk.Label(frame, text="xEdit CSV File:").pack(side="left")
         self.csv_var = tk.StringVar()
         tk.Entry(frame, textvariable=self.csv_var, width=95).pack(side="left", padx=8, fill="x", expand=True)
         tk.Button(frame, text="Browse", command=self.browse_csv).pack(side="right")
 
+        # Text Patch Input (Optional)
+        patch_frame = tk.Frame(self.root)
+        patch_frame.pack(fill="x", padx=25, pady=6)
+        tk.Label(patch_frame, text="Text Patch File (.txt):").pack(side="left")
+        self.patch_var = tk.StringVar()
+        tk.Entry(patch_frame, textvariable=self.patch_var, width=95).pack(side="left", padx=8, fill="x", expand=True)
+        tk.Button(patch_frame, text="Browse", command=self.browse_patch).pack(side="right")
+
         # Lip Tool Path Input
         lip_exe_frame = tk.Frame(self.root)
-        lip_exe_frame.pack(fill="x", padx=25, pady=8)
+        lip_exe_frame.pack(fill="x", padx=25, pady=6)
         tk.Label(lip_exe_frame, text="LipGenerator.exe Path:").pack(side="left")
         self.lip_exe_var = tk.StringVar(value="")
         tk.Entry(lip_exe_frame, textvariable=self.lip_exe_var, width=95).pack(side="left", padx=8, fill="x", expand=True)
@@ -59,7 +68,7 @@ class AutoDialogToDBVOTool:
 
         # Fuz Tool Path Input
         fuz_exe_frame = tk.Frame(self.root)
-        fuz_exe_frame.pack(fill="x", padx=25, pady=8)
+        fuz_exe_frame.pack(fill="x", padx=25, pady=6)
         tk.Label(fuz_exe_frame, text="BmlFuzEncode.exe Path:").pack(side="left")
         self.fuz_exe_var = tk.StringVar(value=str(Path(__file__).parent / "BmlFuzEncode.exe"))
         tk.Entry(fuz_exe_frame, textvariable=self.fuz_exe_var, width=95).pack(side="left", padx=8, fill="x", expand=True)
@@ -77,10 +86,14 @@ class AutoDialogToDBVOTool:
         self.voice_combo = ttk.Combobox(xtts, textvariable=self.voice_var, width=45)
         self.voice_combo.grid(row=1, column=1, padx=8)
         tk.Button(xtts, text="Refresh Voices", command=self.refresh_voices).grid(row=1, column=2, padx=5)
+        
+        # Voice Sample Button
+        tk.Button(xtts, text="Play Voice Sample", bg="#8b0000", fg="white", 
+                  command=self.play_voice_sample).grid(row=1, column=3, padx=8)
 
         # Output Folder UI Elements
         out_frame = tk.Frame(self.root)
-        out_frame.pack(fill="x", padx=25, pady=8)
+        out_frame.pack(fill="x", padx=25, pady=6)
         tk.Label(out_frame, text="Output Folder:").pack(side="left")
         
         initial_folder_name = f"({self.voice_var.get().strip()}) Voicepack"
@@ -92,12 +105,19 @@ class AutoDialogToDBVOTool:
         self.voice_var.trace_add("write", self.update_default_output_dir)
         xtts.pack(fill="x", padx=25, pady=10)
 
-        # Controls
+        # Controls & Options
         ctrl = tk.Frame(self.root)
         ctrl.pack(pady=10)
+        
+        self.skip_existing_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(ctrl, text="Skip Existing Files", variable=self.skip_existing_var, font=("Arial", 10)).pack(side="left", padx=15)
+        
         tk.Button(ctrl, text="Load & Preview", bg="#4444aa", fg="white", command=self.load_csv_preview).pack(side="left", padx=8)
         tk.Button(ctrl, text="Generate + Package for DBVO", bg="#006400", fg="white", font=("Arial", 12, "bold"), 
                   command=self.start_thread).pack(side="left", padx=12)
+        
+        # Clear Logs Button
+        tk.Button(ctrl, text="Clear Logs", bg="#555555", fg="white", command=self.clear_logs).pack(side="left", padx=8)
 
         # Progress
         prog_frame = tk.Frame(self.root)
@@ -108,7 +128,7 @@ class AutoDialogToDBVOTool:
 
         # Log
         tk.Label(self.root, text="Log:").pack(anchor="w", padx=25)
-        self.log_text = scrolledtext.ScrolledText(self.root, height=24, font=("Consolas", 10))
+        self.log_text = scrolledtext.ScrolledText(self.root, height=22, font=("Consolas", 10))
         self.log_text.pack(fill="both", expand=True, padx=25, pady=8)
 
         self.log("Ready. Automatically packages for DBVO after generation.")
@@ -117,7 +137,6 @@ class AutoDialogToDBVOTool:
         self.log("Scanning drives for LipGenerator.exe...")
         target_rel_path = os.path.join("SteamLibrary", "steamapps", "common", "Skyrim Special Edition", "Tools", "LipGen", "LipGenerator", "LipGenerator.exe")
         
-        # Generates ['C', 'D', 'E', ..., 'Z']
         available_drives = [d for d in string.ascii_uppercase if os.path.exists(f"{d}:")]
         
         for drive in available_drives:
@@ -132,7 +151,6 @@ class AutoDialogToDBVOTool:
     def update_default_output_dir(self, *args):
         voicename = self.voice_var.get().strip() or "default"
         current_path = Path(self.output_var.get())
-        # Safely updates the directory name dynamically while keeping user's chosen root
         parent_dir = current_path.parent
         self.output_var.set(str(parent_dir / f"({voicename}) Voicepack"))
 
@@ -141,11 +159,42 @@ class AutoDialogToDBVOTool:
         self.log_text.see(tk.END)
         self.root.update_idletasks()
 
+    def clear_logs(self):
+        self.log_text.delete("1.0", tk.END)
+
+    def play_voice_sample(self):
+        def sample_worker():
+            self.log("Generating sample voice line.")
+            try:
+                payload = {
+                    "text": "Hey you, you're finally awake!",
+                    "voice_id": self.voice_var.get(),
+                    "speaker_wav": f"{self.voice_var.get()}.wav",
+                    "language": "en"
+                }
+                r = requests.post(f"{self.xtts_url.get().rstrip('/')}/tts_to_audio/", json=payload, timeout=15)
+                if r.status_code == 200:
+                    import winsound
+                    self.log("Playing sample audio...")
+                    winsound.PlaySound(r.content, winsound.SND_MEMORY)
+                else:
+                    self.log(f"Failed to fetch sample: Server returned status {r.status_code}")
+            except Exception as e:
+                self.log(f"Error playing voice sample: {e}")
+
+        threading.Thread(target=sample_worker, daemon=True).start()
+
     def browse_csv(self):
         path = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
         if path:
             self.csv_var.set(path)
-            self.log(f"Selected: {path}")
+            self.log(f"Selected CSV: {path}")
+
+    def browse_patch(self):
+        path = filedialog.askopenfilename(filetypes=[("Text files", "*.txt")])
+        if path:
+            self.patch_var.set(path)
+            self.log(f"Selected Text Patch: {path}")
 
     def browse_lip_exe(self):
         path = filedialog.askopenfilename(filetypes=[("Executable files", "*.exe")])
@@ -163,7 +212,6 @@ class AutoDialogToDBVOTool:
         voicename = self.voice_var.get().strip() or "default"
         path = filedialog.askdirectory(title="Select Output Folder")
         if path:
-            # Sets the exact folder path cleanly
             target_folder = Path(path) / f"({voicename}) Voicepack"
             self.output_var.set(str(target_folder))
             self.log(f"Output folder set to: {target_folder}")
@@ -181,6 +229,33 @@ class AutoDialogToDBVOTool:
         except Exception as e:
             self.log(f"Voice refresh failed: {e}")
 
+    def load_patches(self):
+        patch_path = self.patch_var.get().strip()
+        if not patch_path or not os.path.isfile(patch_path):
+            return []
+        
+        patches = []
+        try:
+            with open(patch_path, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    line_clean = line.strip()
+                    if not line_clean or line_clean.startswith("#"):
+                        continue
+                    
+                    # Regex match patterns matching sequence: "Find Target" replacewith "Replacement Target"
+                    match = re.findall(r'"([^"\\]*(?:\\.[^"\\]*)*)"', line)
+                    if len(match) >= 2:
+                        patches.append((match[0], match[1]))
+        except Exception as e:
+            self.log(f"Error loading patches file: {e}")
+        return patches
+
+    def apply_patches(self, text: str, patches: list) -> str:
+        for find_str, replace_str in patches:
+            if find_str in text:
+                text = text.replace(find_str, replace_str, 1) # Only replaces the first encounter
+        return text
+
     def load_csv_preview(self):
         csv_path = self.csv_var.get().strip()
         if not csv_path or not os.path.isfile(csv_path):
@@ -194,6 +269,10 @@ class AutoDialogToDBVOTool:
 
     def load_xedit_csv(self, csv_path: Path):
         player_lines = []
+        patches = self.load_patches()
+        if patches:
+            self.log(f"Applying {len(patches)} active patches from replacement profile rules.")
+            
         try:
             with open(csv_path, "r", encoding="utf-8", errors="ignore") as f:
                 reader = csv.DictReader(f)
@@ -201,6 +280,8 @@ class AutoDialogToDBVOTool:
                     record_type = (row.get("RecordType") or "").strip().upper()
                     text = row.get("Text")
                     if record_type == "DIAL" and text:
+                        if patches:
+                            text = self.apply_patches(text, patches)
                         player_lines.append(text)
         except Exception as e:
             self.log(f"CSV parse error: {e}")
@@ -422,15 +503,38 @@ class AutoDialogToDBVOTool:
             return
 
         deduped = sorted(set(player_lines))
-        source_name = Path(csv_path_str).stem
+        
+        # Filtering setup if "Skip Existing Files" option is switched on
+        if self.skip_existing_var.get():
+            filtered_deduped = []
+            skipped_count = 0
+            for line in deduped:
+                cleaned_text = re.sub(r' ', '_', line)
+                cleaned_text = re.sub(r'[\\/:*?"<>|]', '', cleaned_text)
+                safe_name = cleaned_text[:120] if len(cleaned_text) > 120 else cleaned_text
+                expected_fuz = fuz_dir / f"{safe_name}.fuz"
+                
+                if expected_fuz.exists():
+                    skipped_count += 1
+                else:
+                    filtered_deduped.append(line)
+            
+            self.log(f"Skip Existing Active: Skipped {skipped_count} lines already generated as .fuz outputs.")
+            deduped = filtered_deduped
 
+        if not deduped:
+            self.log("All detected items already completed. Nothing to generate.")
+            messagebox.showinfo("Done", "All lines already exist. Processing skipped.")
+            return
+
+        source_name = Path(csv_path_str).stem
         txt_path = output_dir / f"{source_name}_player_lines.txt"
         with open(txt_path, "w", encoding="utf-8") as f:
             f.write(f"Player Dialogue Lines - {source_name}\n\n")
             for i, line in enumerate(deduped, 1):
                 f.write(f"{i:04d}. {line}\n\n")
 
-        self.log(f"Extracted {len(deduped)} player dialogue lines.")
+        self.log(f"Processing queue contains {len(deduped)} entries.")
 
         sync_pipeline_queue = []
         
@@ -472,12 +576,21 @@ class AutoDialogToDBVOTool:
                     self.progress_label.config(text=f"Lip & FUZ Sync: {int((p-50)*2)}% — {n}")
                 ))
 
+        # Cleanup: Remove the WAV_Reference folder after generation loop finishes
+        if wav_dir.exists():
+            self.log("\nCleaning up intermediate WAV reference files...")
+            try:
+                shutil.rmtree(wav_dir)
+                self.log("WAV_Reference folder successfully removed.")
+            except Exception as e:
+                self.log(f"Notice: Could not completely delete WAV_Reference folder: {e}")
+
         self.log(f"\nFINISHED!")
-        self.log(f"Player dialogue lines parsed: {len(deduped)}")
-        self.log(f"Successful .fuz voice mappings: {total_audio}")
+        self.log(f"Player dialogue lines targeted: {len(deduped)}")
+        self.log(f"Successful .fuz voice mappings generated this run: {total_audio}")
         self.log(f"FOMOD configuration completed successfully.")
         self.log(f"Full DBVO pack constructed at: {output_dir.absolute()}")
-        messagebox.showinfo("Success", f"DBVO Voice Pack Ready!\nLines Parsed: {len(deduped)}\nFUZ Packed: {total_audio}\n\nZip the folder and install as mod.")
+        messagebox.showinfo("Success", f"DBVO Voice Pack Ready!\nLines Processed: {len(deduped)}\nFUZ Packed: {total_audio}\n\nZip the folder and install as mod.")
 
 if __name__ == "__main__":
     app = AutoDialogToDBVOTool()
