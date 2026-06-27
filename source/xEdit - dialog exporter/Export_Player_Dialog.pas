@@ -1,4 +1,4 @@
-unit ExportDialogueForDDR;
+unit ExportPlayerDialogue;
 
 var
   slExport: TStringList;
