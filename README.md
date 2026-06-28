@@ -9,7 +9,7 @@ An automated Python GUI utility that converts exported Skyrim player dialogue te
 * **Automated Audio Conversion:** Converts multi-channel or 32-bit float audio outputs down to standard mono 16-bit PCM, 44.1kHz `.wav` configurations automatically.
 * **Auto-Sourced Tools:** Automatically scans local drives on launch for your Steam installation of `LipGenerator.exe` to save setup steps.
 * **Multi-Threaded Pipelines:** Processes voice downloads in parallel across 4 concurrent threads, then hands files off to a safe, sequential pipeline for local lip sync and `.fuz` assembly.
-* **Text Patch Customization:** Supports optional find-and-replace dictionaries to fix voice-line pronunciation or structural problems on the fly.
+* **Text Patch Customization:** Supports optional loading of voice line patches (list of digalog lines) from .txt file.
 * **Complete FOMOD Assembly:** Creates dynamic folder setups containing matching `.json` manifests, internal Skyrim sound structures (`ae/Sound/DBVO/...`), and valid XML installers for instant Mod Organizer 2 or Vortex integration.
 
 ## Installation & Setup
